@@ -1,0 +1,16 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Deployment files
+.env
+codes.json
+user_sessions.json
+user_locales.json
+
+# Virtual environments
+.venv

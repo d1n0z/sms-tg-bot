@@ -1,0 +1,45 @@
+`sms-tg-bot` is a Telegram bot that mirrors a HeroSMS-style flow:
+
+- user picks a language
+- sends a one-time seller code
+- chooses a country from config
+- receives a phone number
+- waits for the SMS code
+- can cancel only after the configured lock period
+
+Run:
+
+```bash
+python main.py
+```
+
+Required settings in `.env`:
+
+```env
+TG_TOKEN=your_telegram_bot_token
+HERO_SMS_API_KEY=your_hero_sms_api_key
+TG_ADMINS=123456789
+```
+
+`TG_ADMINS` should be configured explicitly. If it is empty, admin commands stay unavailable for everyone.
+
+Optional JSON config for services and countries:
+
+```env
+SERVICES=[{"key":"claude","name":"Claude","hero_sms_code":"acz"}]
+COUNTRIES=[{"key":"france","name":"France","label_ru":"Франция"}]
+ACCESS_CODE_RESERVATION_TIMEOUT_SECONDS=900
+```
+
+Admin commands:
+
+- `/addcode <service_key> [code]`
+- `/gencodes <service_key> <count>`
+- `/delcode <code>`
+- `/codelist [service_key]`
+
+Tests:
+
+```bash
+python -m unittest tests.test_service_flow -v
+```
