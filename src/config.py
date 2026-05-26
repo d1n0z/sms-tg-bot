@@ -126,7 +126,6 @@ def _default_countries() -> list[CountryConfig]:
         CountryConfig(key="sweden", name="Sweden", label_ru="Швеция"),
         CountryConfig(key="poland", name="Poland", label_ru="Польша"),
         CountryConfig(key="portugal", name="Portugal", label_ru="Португалия"),
-        CountryConfig(key="cameroon", name="Cameroon", label_ru="Камерун"),
         CountryConfig(key="malaysia", name="Malaysia", label_ru="Малайзия"),
     ]
 
