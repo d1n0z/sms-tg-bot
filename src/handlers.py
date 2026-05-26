@@ -11,7 +11,14 @@ from aiogram.types import (
 
 from src.messages import SUPPORTED_LOCALES, translate
 from src.service import BotService
-from src.storage import AccessCode, UserSession, normalize_access_code
+from src.storage import AccessCode, normalize_access_code
+from src.ui import (
+    cancel_keyboard,
+    country_keyboard,
+    render_country_prompt_text,
+    render_number_ready_text,
+    render_waiting_text,
+)
 
 
 def build_router(service: BotService) -> Router:
@@ -26,19 +33,15 @@ def build_router(service: BotService) -> Router:
         if session.is_waiting_sms():
             if message.bot is not None:
                 await service.ensure_sms_request_task(message.bot, user_id)
-            await message.answer(
+            sent_message = await message.answer(
                 render_waiting_text(locale, service, session),
                 reply_markup=cancel_keyboard(locale, user_id),
             )
+            await service.bind_status_message(session, sent_message.message_id)
             return
 
         await message.answer(
-            translate(
-                locale,
-                "country_prompt",
-                code=session.access_code,
-                service=service.get_service_name(session.service_key),
-            ),
+            render_country_prompt_text(locale, service, session),
             reply_markup=country_keyboard(
                 locale,
                 user_id,
@@ -159,12 +162,24 @@ def build_router(service: BotService) -> Router:
             await callback.answer()
             return
 
-        with suppress(Exception):
-            await callback.message.edit_reply_markup(reply_markup=None)  # type: ignore[arg-type]
-        await callback.message.answer(
-            render_number_ready_text(locale, service, result.session),
-            reply_markup=cancel_keyboard(locale, callback.from_user.id),
+        updated_session = await service.bind_status_message(
+            result.session,
+            callback.message.message_id,
         )
+        waiting_text = render_number_ready_text(locale, service, updated_session)
+        edited = False
+        with suppress(Exception):
+            await callback.message.edit_text(  # type: ignore
+                waiting_text,
+                reply_markup=cancel_keyboard(locale, callback.from_user.id),
+            )
+            edited = True
+        if not edited:
+            sent_message = await callback.message.answer(
+                waiting_text,
+                reply_markup=cancel_keyboard(locale, callback.from_user.id),
+            )
+            await service.bind_status_message(updated_session, sent_message.message_id)
         await callback.answer()
 
     @router.callback_query(F.data.startswith("cancel:"))
@@ -194,17 +209,6 @@ def build_router(service: BotService) -> Router:
             )
             return
 
-        if callback.message is not None:
-            with suppress(Exception):
-                await callback.message.edit_reply_markup(reply_markup=None)  # type: ignore[arg-type]
-            if result.session is not None:
-                await callback.message.answer(
-                    translate(
-                        locale,
-                        "sms_cancelled",
-                        phone=result.session.phone_number or "-",
-                    )
-                )
         await callback.answer()
 
     @router.callback_query(F.data.startswith("change:"))
@@ -368,7 +372,7 @@ def build_router(service: BotService) -> Router:
             return
 
         service_key = (command.args or "").strip() or None
-        if service_key and service.settings.get_service(service_key) is None:
+        if service_key and service.settings.resolve_service_ref(service_key) is None:
             await message.answer(
                 translate(locale, "addcode_service_missing", service=service_key)
             )
@@ -434,22 +438,18 @@ def build_router(service: BotService) -> Router:
         if result.status == "waiting_sms" and result.session is not None:
             if message.bot is not None:
                 await service.ensure_sms_request_task(message.bot, message.from_user.id)
-            await message.answer(
+            sent_message = await message.answer(
                 render_waiting_text(locale, service, result.session),
                 reply_markup=cancel_keyboard(locale, message.from_user.id),
             )
+            await service.bind_status_message(result.session, sent_message.message_id)
             return
         if result.session is None:
             await message.answer(translate(locale, "code_prompt"))
             return
 
         await message.answer(
-            translate(
-                locale,
-                "country_prompt",
-                code=result.session.access_code,
-                service=service.get_service_name(result.session.service_key),
-            ),
+            render_country_prompt_text(locale, service, result.session),
             reply_markup=country_keyboard(
                 locale,
                 message.from_user.id,
@@ -470,91 +470,6 @@ def language_keyboard() -> InlineKeyboardMarkup:
             ]
         ]
     )
-
-
-def country_keyboard(
-    locale: str,
-    user_id: int,
-    service: BotService,
-    service_key: str,
-) -> InlineKeyboardMarkup:
-    countries = service.get_countries_for_service(service_key)
-    rows: list[list[InlineKeyboardButton]] = []
-    current_row: list[InlineKeyboardButton] = []
-
-    for country in countries:
-        current_row.append(
-            InlineKeyboardButton(
-                text=country.label(locale),
-                callback_data=f"country:{user_id}:{country.key}",
-            )
-        )
-        if len(current_row) == 2:
-            rows.append(current_row)
-            current_row = []
-
-    if current_row:
-        rows.append(current_row)
-
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text=translate(locale, "change_code_button"),
-                callback_data=f"change:{user_id}",
-            )
-        ]
-    )
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def cancel_keyboard(locale: str, user_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=translate(locale, "cancel_button"),
-                    callback_data=f"cancel:{user_id}",
-                )
-            ]
-        ]
-    )
-
-
-def render_waiting_text(locale: str, service: BotService, session: UserSession) -> str:
-    text = translate(
-        locale,
-        "waiting_resume",
-        service=service.get_service_name(session.service_key),
-        country=session.country_name or "-",
-        phone=session.phone_number or "-",
-    )
-    remaining_seconds = service.get_cancel_remaining_seconds(session)
-    if remaining_seconds > 0:
-        text = (
-            f"{text}\n\n"
-            f"{translate(locale, 'waiting_hint', seconds=service.format_duration(remaining_seconds))}"
-        )
-    return text
-
-
-def render_number_ready_text(locale: str, service: BotService, session: UserSession) -> str:
-    text = translate(
-        locale,
-        "number_ready",
-        service=service.get_service_name(session.service_key),
-        country=session.country_name or "-",
-        phone=session.phone_number or "-",
-        activation_id=session.activation_id or "-",
-    )
-    remaining_seconds = service.get_cancel_remaining_seconds(session)
-    if remaining_seconds > 0:
-        text = (
-            f"{text}\n\n"
-            f"{translate(locale, 'waiting_hint', seconds=service.format_duration(remaining_seconds))}"
-        )
-    return text
-
-
 def render_access_code_row(locale: str, service: BotService, access_code: AccessCode) -> str:
     state_label = service.describe_access_code_state(locale, access_code)
     prefix = {

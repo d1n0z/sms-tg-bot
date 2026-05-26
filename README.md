@@ -33,10 +33,10 @@ ACCESS_CODE_RESERVATION_TIMEOUT_SECONDS=900
 
 Admin commands:
 
-- `/addcode <service_key> [code]`
-- `/gencodes <service_key> <count>`
+- `/addcode <service_key|hero_sms_code> [code]`
+- `/gencodes <service_key|hero_sms_code> <count>`
 - `/delcode <code>`
-- `/codelist [service_key]`
+- `/codelist [service_key|hero_sms_code]`
 
 Tests:
 

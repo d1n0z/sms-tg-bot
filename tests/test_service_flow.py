@@ -55,6 +55,18 @@ class ServiceFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_admin_access_is_closed_without_configured_admins(self) -> None:
         self.assertFalse(self.service.is_admin(999))
 
+    async def test_admin_service_alias_accepts_hero_sms_code(self) -> None:
+        status, access_code = await self.service.create_access_code(
+            service_key="acz",
+            custom_code="ALIASCODE",
+        )
+        self.assertEqual(status, "created")
+        assert access_code is not None
+        self.assertEqual(access_code.service_key, "claude")
+
+        listed_codes = await self.service.list_access_codes("acz")
+        self.assertEqual([item.code for item in listed_codes], ["ALIASCODE"])
+
     async def test_no_numbers_keeps_code_reserved_but_not_consumed(self) -> None:
         status, access_code = await self.service.create_access_code(service_key="claude")
         self.assertEqual(status, "created")
@@ -182,6 +194,11 @@ class ServiceFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(start_result.status, "started")
 
+        stored_code = await self.storage.get_access_code(access_code.code)
+        assert stored_code is not None
+        self.assertTrue(stored_code.is_reserved())
+        self.assertFalse(stored_code.is_consumed())
+
         locked_result = await self.service.cancel_sms_request(1)
         self.assertEqual(locked_result.status, "locked")
         self.assertIsNotNone(locked_result.remaining_seconds)
@@ -195,10 +212,25 @@ class ServiceFlowTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        cancelled_result = await self.service.cancel_sms_request(1)
+        cancelled_result = await self.service.cancel_sms_request(1, bot=bot)  # type: ignore[arg-type]
         self.assertEqual(cancelled_result.status, "cancelled")
         self.assertEqual(self.hero_sms.cancelled, ["activation-1"])
-        self.assertIsNone(await self.service.get_user_session(1))
+        session_after_cancel = await self.service.get_user_session(1)
+        self.assertIsNotNone(session_after_cancel)
+        assert session_after_cancel is not None
+        self.assertTrue(session_after_cancel.is_awaiting_country())
+        self.assertEqual(session_after_cancel.access_code, access_code.code)
+        self.assertEqual(
+            bot.messages,
+            [
+                (
+                    10,
+                    f"✅ Код: {access_code.code} принят для сервиса \"Claude\".\n\n"
+                    "➡️ Выбирайте нужную страну кнопками ниже.\n"
+                    "ℹ️ Номер телефона будет действовать в течение 30s.",
+                )
+            ],
+        )
 
     async def test_resume_expired_waiting_session_notifies_user(self) -> None:
         now = datetime.now(timezone.utc)
@@ -220,14 +252,31 @@ class ServiceFlowTests(unittest.IsolatedAsyncioTestCase):
                 updated_at=now - timedelta(minutes=5),
                 sms_requested_at=now - timedelta(seconds=31),
                 cancel_unlocked_at=now - timedelta(seconds=1),
+                status_message_id=77,
             )
         )
 
         bot = FakeBot()
         await self.service.resume_pending_requests(bot)  # type: ignore[arg-type]
 
-        self.assertIsNone(await self.service.get_user_session(1))
+        resumed_session = await self.service.get_user_session(1)
+        self.assertIsNotNone(resumed_session)
+        assert resumed_session is not None
+        self.assertTrue(resumed_session.is_awaiting_country())
         self.assertEqual(self.hero_sms.cancelled, ["activation-9"])
+        self.assertEqual(
+            bot.edits,
+            [
+                (
+                    10,
+                    77,
+                    "✅ Код: EXPIREWAIT принят для сервиса \"Claude\".\n\n"
+                    "➡️ Выбирайте нужную страну кнопками ниже.\n"
+                    "ℹ️ Номер телефона будет действовать в течение 30s.",
+                )
+            ],
+        )
+        return
         self.assertEqual(
             bot.messages,
             [(10, "Время ожидания для `+33123456789` истекло. Активация отменена.")],
@@ -342,13 +391,32 @@ class ServiceFlowTests(unittest.IsolatedAsyncioTestCase):
             country_key="france",
         )
         self.assertEqual(start_result.status, "started")
+        assert start_result.session is not None
+        await self.service.bind_status_message(start_result.session, 55)
 
         for _ in range(100):
-            if bot.messages:
+            if bot.messages or bot.edits:
                 break
             await asyncio.sleep(0.01)
 
         self.assertEqual(self.hero_sms.cancelled, ["activation-1"])
+        resumed_session = await self.service.get_user_session(1)
+        self.assertIsNotNone(resumed_session)
+        assert resumed_session is not None
+        self.assertTrue(resumed_session.is_awaiting_country())
+        self.assertEqual(
+            bot.edits,
+            [
+                (
+                    10,
+                    55,
+                    "✅ Код: BROKENCODE принят для сервиса \"Claude\".\n\n"
+                    "➡️ Выбирайте нужную страну кнопками ниже.\n"
+                    "ℹ️ Номер телефона будет действовать в течение 30s.",
+                )
+            ],
+        )
+        return
         self.assertIsNone(await self.service.get_user_session(1))
         self.assertEqual(bot.messages, [(10, "Не удалось получить SMS для `+33123456789`.")])
 
@@ -396,9 +464,28 @@ class FakeHeroSmsClient:
 class FakeBot:
     def __init__(self) -> None:
         self.messages: list[tuple[int, str]] = []
+        self.edits: list[tuple[int, int, str]] = []
+        self._next_message_id = 1
 
-    async def send_message(self, chat_id: int, text: str, reply_markup=None) -> None:
+    async def send_message(self, chat_id: int, text: str, reply_markup=None):
         self.messages.append((chat_id, text))
+        sent_message = FakeSentMessage(self._next_message_id)
+        self._next_message_id += 1
+        return sent_message
+
+    async def edit_message_text(
+        self,
+        text: str,
+        chat_id: int,
+        message_id: int,
+        reply_markup=None,
+    ) -> None:
+        self.edits.append((chat_id, message_id, text))
+
+
+class FakeSentMessage:
+    def __init__(self, message_id: int) -> None:
+        self.message_id = message_id
 
 
 def service_session(**kwargs):

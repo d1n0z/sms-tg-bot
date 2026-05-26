@@ -16,6 +16,7 @@ from src.hero_sms import (
 )
 from src.messages import DEFAULT_LOCALE, translate
 from src.storage import AccessCode, JsonStorage, UserSession, normalize_access_code
+from src.ui import country_keyboard, render_country_prompt_text
 
 
 @dataclass(slots=True)
@@ -54,20 +55,30 @@ class BotService:
     async def has_locale(self, user_id: int) -> bool:
         return await self.storage.has_locale(user_id)
 
+    async def bind_status_message(self, session: UserSession, message_id: int) -> UserSession:
+        if session.status_message_id == message_id:
+            return session
+        updated_session = replace(session, status_message_id=message_id)
+        await self.storage.upsert_user_session(updated_session)
+        return updated_session
+
     async def get_user_session(self, user_id: int, bot: Bot | None = None) -> UserSession | None:
         requester_id = self.build_requester_id(user_id)
         session = await self.storage.get_user_session(requester_id)
         if session is None:
             return None
         if await self._cleanup_session_if_expired(session, bot=bot):
-            return None
+            return await self.storage.get_user_session(requester_id)
         return session
 
     async def list_access_codes(self, service_key: str | None = None) -> list[AccessCode]:
         codes = await self.storage.list_access_codes()
         if service_key is None:
             return codes
-        normalized_service_key = service_key.strip().lower()
+        service = self.settings.resolve_service_ref(service_key)
+        normalized_service_key = (
+            service.key if service is not None else service_key.strip().lower()
+        )
         return [code for code in codes if code.service_key == normalized_service_key]
 
     async def create_access_code(
@@ -76,7 +87,7 @@ class BotService:
         service_key: str,
         custom_code: str | None = None,
     ) -> tuple[str, AccessCode | None]:
-        service = self.settings.get_service(service_key)
+        service = self.settings.resolve_service_ref(service_key)
         if service is None:
             return "service_missing", None
 
@@ -99,7 +110,7 @@ class BotService:
         service_key: str,
         count: int,
     ) -> tuple[str, list[AccessCode] | None]:
-        service = self.settings.get_service(service_key)
+        service = self.settings.resolve_service_ref(service_key)
         if service is None:
             return "service_missing", None
         if count <= 0:
@@ -247,14 +258,6 @@ class BotService:
                 async with self._sms_task_lock:
                     self._starting_sms_requests.discard(requester_id)
 
-        consume_status, _ = await self.storage.consume_access_code(session.access_code, requester_id)
-        if consume_status not in {"ok", "consumed"}:
-            with contextlib.suppress(Exception):
-                await self.hero_sms.cancel_activation(purchase.activation_id)
-            async with self._sms_task_lock:
-                self._starting_sms_requests.discard(requester_id)
-            return FlowResult(status="provider_error", session=session)
-
         now = datetime.now(timezone.utc)
         updated_session = replace(
             session,
@@ -300,8 +303,8 @@ class BotService:
 
         with contextlib.suppress(Exception):
             await self.hero_sms.cancel_activation(session.activation_id)
-        await self.storage.clear_user_session(requester_id)
-        return FlowResult(status="cancelled", session=session)
+        updated_session = await self._restore_country_selection(session, bot=bot)
+        return FlowResult(status="cancelled", session=updated_session)
 
     async def ensure_sms_request_task(self, bot: Bot, user_id: int) -> None:
         session = await self.get_user_session(user_id, bot=bot)
@@ -354,6 +357,15 @@ class BotService:
         if seconds or not parts:
             parts.append(f"{seconds}s")
         return " ".join(parts)
+
+    def format_request_window(self, locale: str) -> str:
+        total_seconds = max(0, int(self.settings.hero_sms_request_timeout_seconds))
+        if total_seconds >= 60 and total_seconds % 60 == 0:
+            minutes = total_seconds // 60
+            if locale == "ru":
+                return f"{minutes} минут"
+            return f"{minutes} minutes"
+        return self.format_duration(total_seconds)
 
     def describe_access_code_state(self, locale: str, access_code: AccessCode) -> str:
         key = {
@@ -453,18 +465,7 @@ class BotService:
             if session.activation_id is not None:
                 with contextlib.suppress(Exception):
                     await self.hero_sms.cancel_activation(session.activation_id)
-            await self.storage.clear_user_session(session.requester_id)
-            if bot is not None:
-                locale = await self.get_locale(session.user_id)
-                with contextlib.suppress(Exception):
-                    await bot.send_message(
-                        session.chat_id,
-                        translate(
-                            locale,
-                            "sms_timeout",
-                            phone=session.phone_number or "-",
-                        ),
-                    )
+            await self._restore_country_selection(session, bot=bot)
             return True
 
         return False
@@ -488,10 +489,62 @@ class BotService:
             with contextlib.suppress(asyncio.CancelledError):
                 await task_to_cancel
 
+    async def _restore_country_selection(
+        self,
+        session: UserSession,
+        *,
+        bot: Bot | None = None,
+    ) -> UserSession:
+        updated_session = replace(
+            session,
+            state="awaiting_country",
+            country_key=None,
+            country_name=None,
+            activation_id=None,
+            phone_number=None,
+            updated_at=datetime.now(timezone.utc),
+            sms_requested_at=None,
+            cancel_unlocked_at=None,
+        )
+        await self.storage.upsert_user_session(updated_session)
+        if bot is None:
+            return updated_session
+
+        locale = await self.get_locale(updated_session.user_id)
+        text = render_country_prompt_text(locale, self, updated_session)
+        markup = country_keyboard(
+            locale,
+            updated_session.user_id,
+            self,
+            updated_session.service_key,
+        )
+
+        if updated_session.status_message_id is not None:
+            with contextlib.suppress(Exception):
+                await bot.edit_message_text(
+                    text=text,
+                    chat_id=updated_session.chat_id,
+                    message_id=updated_session.status_message_id,
+                    reply_markup=markup,
+                )
+                return updated_session
+
+        with contextlib.suppress(Exception):
+            sent_message = await bot.send_message(
+                updated_session.chat_id,
+                text,
+                reply_markup=markup,
+            )
+            message_id = getattr(sent_message, "message_id", None)
+            if message_id is not None:
+                return await self.bind_status_message(updated_session, message_id)
+        return updated_session
+
     async def _wait_for_sms(self, *, bot: Bot, session: UserSession) -> None:
         if session.activation_id is None:
             return
 
+        active_session = session
         try:
             while not self._is_request_expired(session):
                 current_session = await self.storage.get_user_session(session.requester_id)
@@ -501,64 +554,55 @@ class BotService:
                     return
                 if current_session.activation_id != session.activation_id:
                     return
+                active_session = current_session
 
                 status_text = await self.hero_sms.get_status(session.activation_id)
                 if "STATUS_OK:" in status_text:
                     code = status_text.split(":", 1)[1].strip()
+                    await self.storage.consume_access_code(
+                        active_session.access_code,
+                        active_session.requester_id,
+                    )
                     with contextlib.suppress(Exception):
                         await self.hero_sms.finish_activation(session.activation_id)
-                    await self.storage.clear_user_session(session.requester_id)
-                    locale = await self.get_locale(session.user_id)
+                    await self.storage.clear_user_session(active_session.requester_id)
+                    locale = await self.get_locale(active_session.user_id)
                     with contextlib.suppress(Exception):
                         await bot.send_message(
-                            session.chat_id,
+                            active_session.chat_id,
                             translate(
                                 locale,
                                 "sms_code_found",
-                                phone=session.phone_number or "-",
+                                phone=active_session.phone_number or "-",
                                 code=code,
                             ),
                         )
                     return
 
                 if "STATUS_CANCEL" in status_text:
-                    await self.storage.clear_user_session(session.requester_id)
-                    locale = await self.get_locale(session.user_id)
-                    with contextlib.suppress(Exception):
-                        await bot.send_message(
-                            session.chat_id,
-                            translate(locale, "sms_cancelled_remote"),
-                        )
+                    await self._restore_country_selection(active_session, bot=bot)
                     return
 
                 await asyncio.sleep(self.settings.hero_sms_poll_interval_seconds)
 
             with contextlib.suppress(Exception):
                 await self.hero_sms.cancel_activation(session.activation_id)
-            await self.storage.clear_user_session(session.requester_id)
-            locale = await self.get_locale(session.user_id)
-            with contextlib.suppress(Exception):
-                await bot.send_message(
-                    session.chat_id,
-                    translate(
-                        locale,
-                        "sms_timeout",
-                        phone=session.phone_number or "-",
-                    ),
-                )
+            await self._restore_country_selection(active_session, bot=bot)
         except asyncio.CancelledError:
             raise
         except Exception:
             with contextlib.suppress(Exception):
                 await self.hero_sms.cancel_activation(session.activation_id)
-            await self.storage.clear_user_session(session.requester_id)
-            locale = await self.get_locale(session.user_id)
+            latest_session = await self.storage.get_user_session(session.requester_id)
+            active_session = latest_session or active_session
+            updated_session = await self._restore_country_selection(active_session, bot=bot)
+            locale = await self.get_locale(active_session.user_id)
             with contextlib.suppress(Exception):
                 await bot.send_message(
-                    session.chat_id,
+                    updated_session.chat_id,
                     translate(
                         locale,
                         "sms_failed",
-                        phone=session.phone_number or "-",
+                        phone=active_session.phone_number or "-",
                     ),
                 )

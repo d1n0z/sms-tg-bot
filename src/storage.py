@@ -108,6 +108,7 @@ class UserSession:
     updated_at: datetime
     sms_requested_at: datetime | None = None
     cancel_unlocked_at: datetime | None = None
+    status_message_id: int | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "UserSession":
@@ -137,6 +138,9 @@ class UserSession:
             updated_at=_parse_datetime(data.get("updated_at")) or created_at,
             sms_requested_at=_parse_datetime(data.get("sms_requested_at")),
             cancel_unlocked_at=_parse_datetime(data.get("cancel_unlocked_at")),
+            status_message_id=int(data["status_message_id"])
+            if data.get("status_message_id") is not None
+            else None,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -161,6 +165,7 @@ class UserSession:
             "cancel_unlocked_at": self.cancel_unlocked_at.astimezone(timezone.utc).isoformat()
             if self.cancel_unlocked_at is not None
             else None,
+            "status_message_id": self.status_message_id,
         }
 
     def is_waiting_sms(self) -> bool:

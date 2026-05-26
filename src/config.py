@@ -84,8 +84,8 @@ class CountryConfig(BaseModel):
 def _default_services() -> list[ServiceConfig]:
     return [
         ServiceConfig(
-            key="default",
-            name="Default",
+            key="claude",
+            name="Claude",
             hero_sms_code="acz",
         )
     ]
@@ -124,7 +124,7 @@ class Settings(BaseSettings):
     user_locale_store_path: Path = Path("user_locales.json")
     hero_sms_poll_interval_seconds: float = 5.0
     hero_sms_cancel_unlock_seconds: int = 120
-    hero_sms_request_timeout_seconds: int = 900
+    hero_sms_request_timeout_seconds: int = 1200
     access_code_reservation_timeout_seconds: int = 900
     services: list[ServiceConfig] = Field(default_factory=_default_services)
     countries: list[CountryConfig] = Field(default_factory=_default_countries)
@@ -203,6 +203,24 @@ class Settings(BaseSettings):
         for service in self.services:
             if service.key == normalized:
                 return service
+        return None
+
+    def resolve_service_ref(self, service_ref: str) -> ServiceConfig | None:
+        normalized = service_ref.strip().lower()
+        if not normalized:
+            return None
+
+        service = self.get_service(normalized)
+        if service is not None:
+            return service
+
+        provider_matches = [
+            service
+            for service in self.services
+            if service.hero_sms_code.strip().lower() == normalized
+        ]
+        if len(provider_matches) == 1:
+            return provider_matches[0]
         return None
 
     def get_country(self, country_key: str) -> CountryConfig | None:
