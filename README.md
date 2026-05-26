@@ -26,10 +26,12 @@ TG_ADMINS=123456789
 Optional JSON config for services and countries:
 
 ```env
-SERVICES=[{"key":"claude","name":"Claude","hero_sms_code":"acz"}]
-COUNTRIES=[{"key":"france","name":"France","label_ru":"Франция"}]
+SERVICES=[{"key":"claude","name":"Claude","hero_sms_code":"acz","country_keys":["france","poland"]},{"key":"codex","name":"Codex","hero_sms_code":"dr","country_keys":["netherlands"]}]
+COUNTRIES=[{"key":"france","name":"France","label_ru":"Франция"},{"key":"poland","name":"Poland","label_ru":"Польша"},{"key":"netherlands","name":"Netherlands","label_ru":"Нидерланды"}]
 ACCESS_CODE_RESERVATION_TIMEOUT_SECONDS=900
 ```
+
+There is no global country fallback. Each service must explicitly list its own `country_keys`, otherwise the bot will show no countries for that service.
 
 Admin commands:
 

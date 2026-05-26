@@ -87,7 +87,27 @@ def _default_services() -> list[ServiceConfig]:
             key="claude",
             name="Claude",
             hero_sms_code="acz",
-        )
+            country_keys=[
+                "israel",
+                "netherlands",
+                "brazil",
+                "cameroon",
+                "united-kingdom",
+                "france",
+                "sweden",
+                "poland",
+            ],
+        ),
+        ServiceConfig(
+            key="codex",
+            name="Codex",
+            hero_sms_code="dr",
+            country_keys=[
+                "portugal",
+                "cameroon",
+                "malaysia",
+            ],
+        ),
     ]
 
 
@@ -105,6 +125,9 @@ def _default_countries() -> list[CountryConfig]:
         CountryConfig(key="france", name="France", label_ru="Франция"),
         CountryConfig(key="sweden", name="Sweden", label_ru="Швеция"),
         CountryConfig(key="poland", name="Poland", label_ru="Польша"),
+        CountryConfig(key="portugal", name="Portugal", label_ru="Португалия"),
+        CountryConfig(key="cameroon", name="Cameroon", label_ru="Камерун"),
+        CountryConfig(key="malaysia", name="Malaysia", label_ru="Малайзия"),
     ]
 
 
@@ -143,7 +166,9 @@ class Settings(BaseSettings):
             return [int(item.strip()) for item in stripped.split(",") if item.strip()]
         if isinstance(value, (list, tuple, set)):
             return [int(item) for item in value]
-        raise TypeError("tg_admins must be a list of integers or a comma-separated string")
+        raise TypeError(
+            "tg_admins must be a list of integers or a comma-separated string"
+        )
 
     @field_validator("services", mode="before")
     @classmethod
@@ -173,9 +198,6 @@ class Settings(BaseSettings):
     def validate_catalogs(self) -> "Settings":
         if not self.services:
             raise ValueError("at least one service must be configured")
-        if not self.countries:
-            raise ValueError("at least one country must be configured")
-
         seen_service_keys: set[str] = set()
         for service in self.services:
             if service.key in seen_service_keys:
@@ -191,7 +213,9 @@ class Settings(BaseSettings):
         for service in self.services:
             if not service.country_keys:
                 continue
-            unknown = [key for key in service.country_keys if key not in seen_country_keys]
+            unknown = [
+                key for key in service.country_keys if key not in seen_country_keys
+            ]
             if unknown:
                 raise ValueError(
                     f"service '{service.key}' references unknown countries: {', '.join(unknown)}"

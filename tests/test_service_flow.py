@@ -34,6 +34,7 @@ class ServiceFlowTests(unittest.IsolatedAsyncioTestCase):
                         "key": "claude",
                         "name": "Claude",
                         "hero_sms_code": "acz",
+                        "country_keys": ["france"],
                     }
                 ],
                 countries=[
@@ -54,6 +55,25 @@ class ServiceFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_admin_access_is_closed_without_configured_admins(self) -> None:
         self.assertFalse(self.service.is_admin(999))
+
+    async def test_service_without_country_mapping_has_no_countries(self) -> None:
+        settings = Settings(
+            services=[
+                {
+                    "key": "claude",
+                    "name": "Claude",
+                    "hero_sms_code": "acz",
+                }
+            ],
+            countries=[
+                {
+                    "key": "france",
+                    "name": "France",
+                    "label_ru": "Ð¤Ñ€Ð°Ð½Ñ†Ð¸Ñ",
+                }
+            ],
+        )
+        self.assertEqual(settings.get_countries_for_service("claude"), [])
 
     async def test_admin_service_alias_accepts_hero_sms_code(self) -> None:
         status, access_code = await self.service.create_access_code(
