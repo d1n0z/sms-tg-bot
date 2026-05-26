@@ -26,7 +26,7 @@ MESSAGES = {
         "code_reserved": "Код `{code}` уже активирован другим пользователем.",
         "service_missing": "Для кода `{code}` не найден сервис в конфиге.",
         "country_prompt": (
-            "✅ Код: {code} принят для сервиса \"{service}\".\n\n"
+            "✅ Код: `{code}` принят для сервиса \"{service}\".\n\n"
             "➡️ Выбирайте нужную страну кнопками ниже.\n"
             "ℹ️ Номер телефона будет действовать в течение {request_window}."
         ),
@@ -34,24 +34,24 @@ MESSAGES = {
         "country_no_numbers": "Для страны `{country}` сейчас нет свободных номеров. Выберите другую.",
         "country_request_failed": "Не удалось запросить номер для страны `{country}`.",
         "number_ready": (
-            "➡️ Сервис: {service} / {code}\n"
-            "1️⃣ Номер телефона: {phone}\n"
-            "2️⃣ ID активации: {activation_id}\n"
+            "➡️ Сервис: `{service}` / `{code}`\n"
+            "1️⃣ Номер телефона: `+{phone}`\n"
+            "2️⃣ ID активации: `{activation_id}`\n"
             "3️⃣ SMS-код с номера: Ждем.\n\n"
             "❗️ Если номер не подходит, после {cancel_after} можете отменить и выбрать новый номер.."
         ),
         "waiting_hint": "Кнопка отмены станет доступна через {seconds}.",
         "waiting_resume": (
-            "➡️ Сервис: {service} / {code}\n"
-            "1️⃣ Номер телефона: {phone}\n"
-            "2️⃣ ID активации: {activation_id}\n"
+            "➡️ Сервис: `{service}` / `{code}`\n"
+            "1️⃣ Номер телефона: `+{phone}`\n"
+            "2️⃣ ID активации: `{activation_id}`\n"
             "3️⃣ SMS-код с номера: Ждем."
         ),
         "waiting_already": "Вы уже ждете SMS по текущей заявке.",
-        "sms_code_found": "Код для `{phone}`: `{code}`",
+        "sms_code_found": "Код для `+{phone}`: `{code}`",
         "sms_timeout": "Время ожидания истекло. Выберите страну еще раз.",
-        "sms_failed": "Не удалось получить SMS для `{phone}`.",
-        "sms_cancelled": "Активация для `{phone}` отменена.",
+        "sms_failed": "Не удалось получить SMS для `+{phone}`.",
+        "sms_cancelled": "Активация для `+{phone}` отменена.",
         "sms_cancelled_remote": "Активация была отменена на стороне HeroSMS.",
         "cancel_button": "Отменить",
         "cancel_locked": "Отмена будет доступна через {remaining}.",
@@ -99,7 +99,7 @@ MESSAGES = {
         "code_reserved": "Code `{code}` is already activated by another user.",
         "service_missing": "No configured service was found for code `{code}`.",
         "country_prompt": (
-            "✅ Code: {code} accepted for service \"{service}\".\n\n"
+            "✅ Code: `{code}` accepted for service \"{service}\".\n\n"
             "➡️ Choose the country you need with the buttons below.\n"
             "ℹ️ The phone number will stay active for {request_window}."
         ),
@@ -107,24 +107,24 @@ MESSAGES = {
         "country_no_numbers": "There are no free numbers for `{country}` right now. Choose another country.",
         "country_request_failed": "Could not request a number for `{country}`.",
         "number_ready": (
-            "➡️ Service: {service} / {code}\n"
-            "1️⃣ Phone number: {phone}\n"
-            "2️⃣ Activation ID: {activation_id}\n"
+            "➡️ Service: `{service}` / `{code}`\n"
+            "1️⃣ Phone number: `+{phone}`\n"
+            "2️⃣ Activation ID: `{activation_id}`\n"
             "3️⃣ SMS code from the number: Waiting.\n\n"
             "❗️ If the number does not fit, after {cancel_after} you can cancel and choose a new number.."
         ),
         "waiting_hint": "The cancel button will become available in {seconds}.",
         "waiting_resume": (
-            "➡️ Service: {service} / {code}\n"
-            "1️⃣ Phone number: {phone}\n"
-            "2️⃣ Activation ID: {activation_id}\n"
+            "➡️ Service: `{service}` / `{code}`\n"
+            "1️⃣ Phone number: `+{phone}`\n"
+            "2️⃣ Activation ID: `{activation_id}`\n"
             "3️⃣ SMS code from the number: Waiting."
         ),
         "waiting_already": "You are already waiting for an SMS for the current request.",
-        "sms_code_found": "Code for `{phone}`: `{code}`",
+        "sms_code_found": "Code for `+{phone}`: `{code}`",
         "sms_timeout": "The waiting time has expired. Choose the country again.",
-        "sms_failed": "Could not get the SMS for `{phone}`.",
-        "sms_cancelled": "Activation for `{phone}` was cancelled.",
+        "sms_failed": "Could not get the SMS for `+{phone}`.",
+        "sms_cancelled": "Activation for `+{phone}` was cancelled.",
         "sms_cancelled_remote": "The activation was cancelled on the HeroSMS side.",
         "cancel_button": "Cancel",
         "cancel_locked": "Cancellation will be available in {remaining}.",
