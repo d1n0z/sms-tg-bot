@@ -108,6 +108,16 @@ def _default_services() -> list[ServiceConfig]:
                 "malaysia",
             ],
         ),
+        ServiceConfig(
+            key="perplexity",
+            name="Perplexity",
+            hero_sms_code="dr",
+            country_keys=[
+                "united-kingdom",
+                "romania",
+                "sweden",
+            ],
+        ),
     ]
 
 
@@ -127,6 +137,7 @@ def _default_countries() -> list[CountryConfig]:
         CountryConfig(key="poland", name="Poland", label_ru="Польша"),
         CountryConfig(key="portugal", name="Portugal", label_ru="Португалия"),
         CountryConfig(key="malaysia", name="Malaysia", label_ru="Малайзия"),
+        CountryConfig(key="romania", name="Romania", label_ru="Румыния"),
     ]
 
 
